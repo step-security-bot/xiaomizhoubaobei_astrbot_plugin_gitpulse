@@ -1,7 +1,7 @@
 """Rate limiter for webhook requests."""
 
-import time
 import asyncio
+import time
 from collections import deque
 
 

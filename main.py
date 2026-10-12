@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 from aiohttp import web
-
-from astrbot.api import AstrBotConfig, logger
+from astrbot.api import AstrBotConfig
 from astrbot.api import all as api
+from astrbot.api import logger
 from astrbot.api.message_components import Plain
 from astrbot.api.star import Context, Star, register
 
