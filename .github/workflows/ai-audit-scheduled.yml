@@ -310,11 +310,37 @@ jobs:
             return 0
           }
 
-          # 只处理校验通过（APPROVED）且必备字段齐全的条目；字段全部按字符串使用，
-          # 经 jq 转义后写入 JSON body，杜绝命令/JSON 注入。
+          # ── alert_number 守卫（第一道闸：筛选阶段） ─────────────────────────
+          # 判据：`alert_number` 必须是**正整数**，而非「非空字符串」。
+          # 成因：alert_number 会被拼进**公开 Issue 标题**、去重指纹与正文；若只要求
+          #   「非空」，则格式错误或受提示词影响的任意文本（**含漏洞详情**）都会被当作
+          #   编号发布到公开 Issue，违反 SECURITY.md 的协调披露约定。故在**进入计数与
+          #   循环之前**就用 POSIX 字符类 `^[0-9]+$` 硬过滤掉一切非法值。
+          #   同时把该条**逐条告警**（含编不清的编号，用 `?` 占位）打到 stderr，
+          #   避免「静默丢弃」——维护者需要知道有结论被守卫拦下了。
+          # 实现复用 scripts/validate-alert-number.sh，保证与 publish 阶段同一判据。
+          # ⚠️ jq 的 `test()` 默认语义受 locale 影响，故这里用 `^[0-9]+$` 而非 `\\d`；
+          #    再叠加 shell 侧守卫做**双保险**（jq 只负责粗筛，shell 负责最终裁决）。
+          REJECTED="$(jq '[.[] | select(.status=="APPROVED")
+                                 | select((.rule//"")!="" and (.path//"")!="")
+                                 | select(((.alert_number // "") | tostring
+                                           | test("^[0-9]+$")) | not)]
+                            | length' "$FILE")"
+          if [ "$REJECTED" -gt 0 ]; then
+            echo "守卫拦截：${REJECTED} 条 APPROVED 结论的 alert_number 不是正整数，已跳过（不发文）" >&2
+            jq -r '.[] | select(.status=="APPROVED")
+                        | select((.rule//"")!="" and (.path//"")!="")
+                        | select(((.alert_number // "") | tostring | test("^[0-9]+$")) | not)
+                        | "[守卫] alert_number 非法，跳过：编号=?\((.alert_number // "null")|tostring) 规则=\(.rule)"' \
+              "$FILE" >&2 || true
+          fi
+
+          # 只处理校验通过（APPROVED）、必备字段齐全、且 alert_number 为**正整数**的条目；
+          # 字段全部按字符串使用，经 jq 转义后写入 JSON body，杜绝命令/JSON 注入。
           COUNT="$(jq '[.[] | select(.status=="APPROVED")
-                             | select((.rule//"")!="" and (.path//"")!=""
-                                      and (.alert_number//"")!="")]
+                             | select((.rule//"")!="" and (.path//"")!="")
+                             | select(((.alert_number // "") | tostring
+                                       | test("^[0-9]+$")))]
                         | length' "$FILE")"
           echo "待处理结论数：$COUNT"
           if [ "$COUNT" -eq 0 ]; then echo "无可发布结论，跳过"; exit 0; fi
@@ -327,7 +353,21 @@ jobs:
               PATH_="$(jq -r '.path' <<<"$item")"
               ALERT="$(jq -r '.alert_number' <<<"$item")"
               REPORT="$(jq -r '.report // ""' <<<"$item")"
-              # ⚠️ 公开标题**不含** rule/path（二者属可利用细节），仅以告警编号区分；
+
+              # ── alert_number 守卫（第二道闸：发布阶段，最终裁决） ────────────────
+              # 这是 `alert_number` 用于任何**公开内容 / API 路径之前**的最后一道关：
+              #   · 上一步的 jq 粗筛在语法层拦一次，这一步用 shell 守卫做**语义裁决**，
+              #     二者判据同源（均为「纯十进制且为正值」），任一处被绕过都还有另一处兜底；
+              #   · 守卫同时把编号**规范化**（去前导零），使标题与指纹对同一告警恒等，
+              #     避免 `007` / `7` 被当成两个告警而重复发文。
+              # 守卫失败即 `continue`（跳过该条，**绝不**降级发布受污染文本）。
+              if ! ALERT="$(bash scripts/validate-alert-number.sh "$ALERT" 2>/dev/null)"; then
+                echo "守卫拦截：alert_number 非正整数，跳过该条（不建公开 Issue/公告）" >&2
+                SKIPPED=$((SKIPPED + 1))
+                continue
+              fi
+
+              # ⚠️ 公开标题**不含** rule/path（二者属可利用细节），仅以**已校验**的告警编号区分；
               #    维护者可凭编号到私密公告里查看对应的规则与文件。
               TITLE="[AI审计] CodeQL 告警 #${ALERT}"
               FINGERPRINT="${FINGERPRINT_PREFIX}${ALERT} -->"
@@ -413,8 +453,9 @@ jobs:
                 SKIPPED=$((SKIPPED + 1))
               fi
           done < <(jq -c '.[] | select(.status=="APPROVED")
-                             | select((.rule//"")!="" and (.path//"")!=""
-                                      and (.alert_number//"")!="")' "$FILE")
+                             | select((.rule//"")!="" and (.path//"")!="")
+                             | select(((.alert_number // "") | tostring
+                                       | test("^[0-9]+$")))' "$FILE")
 
           echo "发布完成：新建公开 Issue ${CREATED} 条，私密公告 ${ADVISORY} 条，跳过 ${SKIPPED} 条"
 
