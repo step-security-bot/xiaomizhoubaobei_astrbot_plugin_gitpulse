@@ -6,13 +6,38 @@
 
 ### 消息格式（使用默认模板）
 
+一次 push 携带多个 commit 时，会逐条列出全部提交（默认最多展示 5 条，
+超出部分折叠为「其余 N 个 commit 已折叠」摘要），不再只转发第一条。
+
+单条提交：
+
 ```
 📦 GitHub Push Event
 👤 username pushed to owner/repo
 🌿 Branch: main
-💬 Fix webhook message sending issue
-🔗 Commit: abc1234
-📎 https://github.com/owner/repo/commit/abc1234
+🧾 Commits: 1
+
+  1. 💬 Fix webhook message sending issue
+     🔗 abc1234
+     📎 https://github.com/owner/repo/commit/abc1234
+```
+
+多条提交（超上限时折叠）：
+
+```
+📦 GitHub Push Event
+👤 username pushed to owner/repo
+🌿 Branch: main
+🧾 Commits: 7
+
+  1. 💬 feat: 新增 A 功能
+     🔗 a1b2c3d
+     📎 https://github.com/owner/repo/commit/a1b2c3d
+  ...
+  5. 💬 fix: 修复 B 问题
+     🔗 1f2e3d4
+     📎 https://github.com/owner/repo/commit/1f2e3d4
+  … 其余 2 个 commit 已折叠
 ```
 
 ### LLM 生成示例

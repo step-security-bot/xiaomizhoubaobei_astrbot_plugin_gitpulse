@@ -10,7 +10,6 @@ async def handle_push_event(data: dict, context):
     try:
         pusher = data.get("pusher", {})
         author_name = pusher.get("name", "Unknown")
-        author_login = pusher.get("email", "")
 
         repository = data.get("repository", {})
         repo_name = repository.get("full_name", "Unknown")
@@ -23,18 +22,13 @@ async def handle_push_event(data: dict, context):
             logger.warning("GitHub Webhook: Push event has no commits")
             return None
 
-        commit = commits[0]
-        commit_message = commit.get("message", "No message")
-        commit_url = commit.get("url", "")
-        commit_id = commit.get("id", "")[:7]
-
+        # 方案 B：不再只取 commits[0]，而是把全部 commit 交给格式化层渲染，
+        # 由格式化层按上限折叠为摘要，避免多条提交被静默丢弃。
         message = format_push_message(
             author_name=author_name,
             repo_name=repo_name,
             branch=branch,
-            commit_message=commit_message,
-            commit_url=commit_url,
-            commit_id=commit_id,
+            commits=commits,
         )
 
         return message
