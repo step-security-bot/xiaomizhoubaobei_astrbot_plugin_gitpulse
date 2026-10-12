@@ -52,7 +52,9 @@ $:
                   - git clone https://github.com/AstrBotDevs/AstrBot.git
 
 main:
-      # 同步本仓库代码到 GitHub 镜像仓库（xiaomizhoubaobei/astrbot_plugin_gitpulse）。
+      # 同步本仓库代码到 GitHub 镜像仓库（xiaomizhoubaobei/astrbot_plugin_gitpulse），
+      # 并开启强制推送（force: true -> git push --force），确保 CNB 侧历史始终覆盖镜像仓库，
+      # 即使两侧历史出现分叉（如镜像仓库被外部改动）也能同步成功，不留半同步状态。
       # 说明：Github.yml 密钥仓库提供 GIT_USERNAME / GIT_ACCESS_TOKEN / GIT_EMAIL。
       push:
         - services:
@@ -68,5 +70,6 @@ main:
                 username: ${GIT_USERNAME}
                 password: ${GIT_ACCESS_TOKEN}
                 branch: main
+                force: true
                 git_user: ${GIT_USERNAME}
                 git_email: ${GIT_EMAIL}
