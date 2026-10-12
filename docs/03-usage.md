@@ -7,38 +7,38 @@
 ### 消息格式（使用默认模板）
 
 一次 push 携带多个 commit 时，会逐条列出全部提交（默认最多展示 5 条，
-超出部分折叠为「其余 N 个 commit 已折叠」摘要），不再只转发第一条。
+超出部分折叠为「…等 N 条」摘要），不再只转发第一条，同时控制消息长度。
 
-单条提交：
-
-```
-📦 GitHub Push Event
-👤 username pushed to owner/repo
-🌿 Branch: main
-🧾 Commits: 1
-
-  1. 💬 Fix webhook message sending issue
-     🔗 abc1234
-     📎 https://github.com/owner/repo/commit/abc1234
-```
-
-多条提交（超上限时折叠）：
+**单条提交**（常见情况，保持紧凑格式）：
 
 ```
 📦 GitHub Push Event
 👤 username pushed to owner/repo
 🌿 Branch: main
-🧾 Commits: 7
-
-  1. 💬 feat: 新增 A 功能
-     🔗 a1b2c3d
-     📎 https://github.com/owner/repo/commit/a1b2c3d
-  ...
-  5. 💬 fix: 修复 B 问题
-     🔗 1f2e3d4
-     📎 https://github.com/owner/repo/commit/1f2e3d4
-  … 其余 2 个 commit 已折叠
+💬 Fix webhook message sending issue
+🔗 Commit: abc1234
+📎 https://github.com/owner/repo/commit/abc1234
 ```
+
+**多条提交**（每条压成一行，超上限折叠）：
+
+```
+📦 GitHub Push Event
+👤 username pushed to owner/repo
+🌿 Branch: main
+🔢 8 commits
+  • abc1234 feat: 新增 A 功能
+  • def5678 fix: 修复 B 问题
+  • 9abcdef docs: 更新说明
+  • 0123456 chore: 调整依赖
+  • 789abcd refactor: 重构 C 模块
+  …等 3 条
+📎 https://github.com/owner/repo/commit/abcdef0
+```
+
+- 最多逐条展示 5 条提交（`MAX_DISPLAYED_COMMITS`，见 `src/formatters/push_formatter.py`）。
+- 每条只保留短 ID 与提交信息首行，超长信息自动截断，避免撑爆消息。
+- 汇总链接指向本次推送的最新提交。
 
 ### LLM 生成示例
 

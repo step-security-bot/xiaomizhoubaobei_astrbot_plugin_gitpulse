@@ -22,16 +22,18 @@ async def handle_push_event(data: dict, context):
             logger.warning("GitHub Webhook: Push event has no commits")
             return None
 
-        # 方案 B：不再只取 commits[0]，而是把全部 commit 交给格式化层渲染，
-        # 由格式化层按上限折叠为摘要，避免多条提交被静默丢弃。
-        message = format_push_message(
+        # 不再只取 commits[0]，而是把全部 commit 交给格式化层渲染，
+        # 由格式化层按上限折叠，避免多条提交被静默丢弃，同时控制消息长度。
+        # 汇总链接指向本次推送的最新提交（commits 末尾为 head）。
+        head_url = commits[-1].get("url", "")
+
+        return format_push_message(
             author_name=author_name,
             repo_name=repo_name,
             branch=branch,
             commits=commits,
+            commit_url=head_url,
         )
-
-        return message
 
     except Exception as e:
         logger.error(f"GitHub Webhook: Error handling push event: {e}")
