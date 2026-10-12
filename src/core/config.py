@@ -13,9 +13,29 @@ class ConfigNode:
 
     _SCHEMA_CACHE: dict[type, dict[str, type]] = {}
 
+    # 各类型的兜底默认值：宿主 AstrBotConfig 对缺失键返回 None，
+    # 直接用 None 参与比较/拼接会抛 TypeError，故按声明类型给出零值兜底。
+    _TYPE_DEFAULTS: dict[type, Any] = {
+        int: 0,
+        float: 0.0,
+        bool: False,
+        str: "",
+        list: None,
+        dict: None,
+    }
+
     @classmethod
     def _schema(cls) -> dict[str, type]:
         return cls._SCHEMA_CACHE.setdefault(cls, get_type_hints(cls))
+
+    @classmethod
+    def _default_for(cls, key: str) -> Any:
+        """按类型注解给出缺失字段的兜底默认值（无法判定时返回 None）。"""
+        declared = cls._schema().get(key)
+        if declared in (list, dict):
+            # 可变类型单独创建，避免多个实例共享同一对象
+            return declared()
+        return cls._TYPE_DEFAULTS.get(declared)  # type: ignore[arg-type]
 
     def __init__(self, data: MutableMapping[str, Any]):
         object.__setattr__(self, "_data", data)
@@ -28,7 +48,9 @@ class ConfigNode:
 
     def __getattr__(self, key: str) -> Any:
         if key in self._schema():
-            return self._data.get(key)
+            value = self._data.get(key)
+            # 宿主对缺失键返回 None：此处按声明类型兜底，避免下游 TypeError
+            return self._default_for(key) if value is None else value
         raise AttributeError(key)
 
     def __setattr__(self, key: str, value: Any) -> None:
