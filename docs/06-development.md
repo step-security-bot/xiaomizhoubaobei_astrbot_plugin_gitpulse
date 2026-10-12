@@ -38,16 +38,12 @@
 - 保持模块化和可维护性
 - 更新相关文档
 
-### 代码格式化（pre-commit 自动格式化）
+### 代码格式化（pre-commit）
 
 本仓库使用 [pre-commit](https://pre-commit.com/) 统一代码风格，配置见根目录 `.pre-commit-config.yaml`，
 覆盖 black、isort、flake8、mypy、pydocstyle 以及文件层面检查（行尾空白、文件末尾换行等）。
 
-**自动化执行**：仓库内置 GitHub Actions 工作流 `.github/workflows/pre-commit.yml`，
-在 push / PR 时自动运行并**回写**支持自动修复的钩子（black、isort 等）结果，
-`pull_request` 事件下会直接修好 PR 源分支，无需手动执行。
-
-**本地手动执行**（推荐在提交前跑一次）：
+**本地手动执行**（提交前请自行跑一次）：
 
 ```bash
 pip install pre-commit
