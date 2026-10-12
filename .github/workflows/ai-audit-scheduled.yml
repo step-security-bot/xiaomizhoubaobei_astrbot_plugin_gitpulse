@@ -375,7 +375,14 @@ jobs:
               # ── ① 先投私密公告（承载细节），未成功则**不建公开 Issue** ─────────────
               # 顺序很关键：先确保细节有私密落点，再建公开占位；否则一旦公告写入失败
               # 而公开 Issue 已建，就会出现「公开无细节、私密无记录」的悬空跟踪项。
-              ADVISORY_ID="$(find_advisory_by_alert "$ALERT" || true)"
+              # ⚠️ 必须区分「查询成功但未找到」与「查询出错」：
+              #    前者返回空串（可安全新建公告），后者返回非 0（**必须停止发布**）。
+              #    若像以往那样用 `|| true` 把出错一并吞成空串，API 报错 / 响应校验失败
+              #    会被误判为「未找到」→ 对同一条告警重复创建公告（公告写接口非幂等）。
+              if ! ADVISORY_ID="$(find_advisory_by_alert "$ALERT")"; then
+                echo "查询私密公告失败（告警 #${ALERT}），停止发布以避免重复创建" >&2
+                exit 1
+              fi
               if [ -z "$ADVISORY_ID" ]; then
                 # 说明：一次成型成 payload，**不要**先把 description 单独 jq 成字符串再
                 #      用 --arg 传入——那会把已是 JSON 字符串的中转值再包一层引号，
@@ -403,7 +410,11 @@ jobs:
               # 第一道去重（乐观预检）：命中即跳过，省下一次创建调用。
               # 注意：并发窗口下这一步只是「快速路径」，**不是**正确性保证，
               #       正确性由后续的创建后自愈兜底（见下）。
-              EXIST="$(find_issue_by_fingerprint "$FINGERPRINT" || true)"
+              # ⚠️ 同①：查询出错必须停止发布，否则会把「查不到」误判成「不存在」而重复建 Issue。
+              if ! EXIST="$(find_issue_by_fingerprint "$FINGERPRINT")"; then
+                echo "查询既有 Issue 失败（告警 #${ALERT}），停止发布以避免重复创建" >&2
+                exit 1
+              fi
               if [ -n "$EXIST" ]; then
                 echo "已存在（#${EXIST}），跳过：$TITLE"
                 SKIPPED=$((SKIPPED + 1))
@@ -439,7 +450,12 @@ jobs:
               # 到唯一一条 open Issue，无需人工清理。
               # 说明：本工作流已用 concurrency 串行化，此处自愈属**纵深防御**——
               #       即便未来有人去掉 concurrency 或 GitHub 偶发重放，也能自愈。
-              DUP_OF="$(find_issue_by_fingerprint "$FINGERPRINT" || true)"
+              # ⚠️ 同①②：查询出错不得静默当作「无并发重复」——那会放过真实的重复 Issue。
+              #    此处 Issue 已创建，无法回滚，故以非 0 退出让 job 失败，由维护者介入核对。
+              if ! DUP_OF="$(find_issue_by_fingerprint "$FINGERPRINT")"; then
+                echo "自愈查询失败（已创建 #${NEW_ID}，告警 #${ALERT}），停止以避免漏判重复" >&2
+                exit 1
+              fi
               if [ -n "$DUP_OF" ] && [ "$DUP_OF" != "$NEW_ID" ] \
                  && [ "$DUP_OF" -lt "$NEW_ID" ]; then
                 echo "检测到并发重复（保留 #${DUP_OF}），自我关闭 #${NEW_ID}" >&2
