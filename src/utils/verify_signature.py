@@ -9,8 +9,7 @@ def verify_signature(
     signature_header: str,
     secret: str,
 ) -> bool:
-    """
-    Verify GitHub webhook signature using HMAC-SHA256.
+    """Verify GitHub webhook signature using HMAC-SHA256.
 
     Args:
         payload: Raw request body bytes

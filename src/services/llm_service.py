@@ -1,21 +1,13 @@
 """LLM service for message generation."""
 
 import asyncio
-import json
 
 from astrbot.api import logger
 
 
 async def send_with_agent(plugin_instance, message: str, data: dict, event_type: str):
-    """使用 LLM 生成个性化消息并发送"""
+    """使用 LLM 生成个性化消息并发送."""
     try:
-        # 构建 LLM 任务的 prompt
-        event_name = {
-            "push": "代码推送",
-            "issues": "问题",
-            "pull_request": "拉取请求",
-        }.get(event_type, event_type)
-
         # 构建 LLM 输入信息 - 优化结构，确保 GitHub 事件内容优先级最高
         llm_input = f"""GitHub 事件信息：
 
@@ -73,8 +65,9 @@ async def send_with_agent(plugin_instance, message: str, data: dict, event_type:
                 ),
                 timeout=plugin_instance.cfg.agent_timeout,
             )
+            response_length = len(llm_response.completion_text) if llm_response else 0
             logger.info(
-                f"GitHub Webhook: LLM response received, length: {len(llm_response.completion_text) if llm_response else 0}"
+                f"GitHub Webhook: LLM response received, " f"length: {response_length}"
             )
 
             # 诊断日志：输出长度和内容
@@ -88,7 +81,9 @@ async def send_with_agent(plugin_instance, message: str, data: dict, event_type:
             # 检测输出是否可能被截断
             if output_text and len(output_text) < 100:
                 logger.warning(
-                    f"GitHub Webhook: LLM output suspiciously short (input: {len(llm_input)} chars, output: {len(output_text)} chars)"
+                    f"GitHub Webhook: LLM output suspiciously short "
+                    f"(input: {len(llm_input)} chars, "
+                    f"output: {len(output_text)} chars)"
                 )
 
             # 从 LLM 响应中提取纯文本内容
@@ -114,13 +109,16 @@ async def send_with_agent(plugin_instance, message: str, data: dict, event_type:
                     await plugin_instance.send_message(message)
             else:
                 logger.warning(
-                    "GitHub Webhook: LLM returned None or empty completion, falling back to template"
+                    "GitHub Webhook: LLM returned None or empty completion, "
+                    "falling back to template"
                 )
                 await plugin_instance.send_message(message)
 
         except asyncio.TimeoutError:
             logger.error(
-                f"GitHub Webhook: LLM timeout after {plugin_instance.cfg.agent_timeout} seconds, falling back to template"
+                f"GitHub Webhook: LLM timeout after "
+                f"{plugin_instance.cfg.agent_timeout} seconds, "
+                f"falling back to template"
             )
             await plugin_instance.send_message(message)
 

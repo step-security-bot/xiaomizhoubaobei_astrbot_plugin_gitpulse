@@ -14,26 +14,27 @@ from ..handlers.push_handler import handle_push_event
 from ..utils.rate_limiter import RateLimiter
 from ..utils.verify_signature import verify_signature
 from .config import PluginConfig
-from .constants import DEFAULT_PORT
 
 
 class GitHubWebhookPlugin(Star):
     """GitHub Webhook receiver plugin."""
 
     def __init__(self, context: Context, config):
+        """初始化插件：装配 aiohttp 应用与限流器."""
         super().__init__(context)
         self.app = web.Application()
         self.app.router.add_post("/webhook", self.handle_webhook)
-        self.runner = None
-        self.site = None
+        self.runner: web.AppRunner | None = None
+        self.site: web.TCPSite | None = None
         self.cfg = PluginConfig(config)
 
+        # rate_limit <= 0 表示不启用限流，此时显式置空以便下游判空
+        self.rate_limiter: RateLimiter | None = None
         if self.cfg.rate_limit > 0:
             self.rate_limiter = RateLimiter(max_requests=self.cfg.rate_limit)
-        else:
-            self.rate_limiter = None
 
     async def start_server(self):
+        """启动（或重启）webhook HTTP 服务."""
         # Clean up any existing server instance
         if self.site:
             await self.site.stop()
@@ -49,6 +50,7 @@ class GitHubWebhookPlugin(Star):
         logger.info(f"GitHub Webhook: Server started on port {self.cfg.port}")
 
     async def handle_webhook(self, request: web.Request):
+        """处理 GitHub webhook 请求：限流、验签、分发并回包."""
         event_type = request.headers.get("X-GitHub-Event", "unknown")
         signature = request.headers.get("X-Hub-Signature-256", "")
 
@@ -120,6 +122,7 @@ class GitHubWebhookPlugin(Star):
         return web.Response(status=200, text="OK")
 
     async def send_message(self, message: str):
+        """按纯文本回包到配置的会话目标."""
         if not self.cfg.target_umo:
             logger.error(
                 "GitHub Webhook: Cannot send message - target_umo not configured"
@@ -143,6 +146,7 @@ class GitHubWebhookPlugin(Star):
             logger.error(f"GitHub Webhook: Error details: {str(e)}")
 
     async def terminate(self):
+        """插件卸载时释放 HTTP 服务与运行器资源."""
         logger.info("GitHub Webhook: Shutting down server...")
         if self.site:
             await self.site.stop()

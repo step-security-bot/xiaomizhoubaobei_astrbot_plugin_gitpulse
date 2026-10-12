@@ -9,8 +9,7 @@ class RateLimiter:
     """Rate limiter using sliding window algorithm."""
 
     def __init__(self, max_requests: int, window_seconds: int = 60):
-        """
-        Initialize rate limiter.
+        """Initialize rate limiter.
 
         Args:
             max_requests: Maximum requests allowed in window
@@ -18,12 +17,12 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self.requests = deque()  # Store timestamps
+        # 滑动窗口内的请求时间戳，显式声明元素类型避免 mypy 无法推断
+        self.requests: deque[float] = deque()
         self._lock = asyncio.Lock()
 
     async def is_allowed(self) -> tuple[bool, int]:
-        """
-        Check if request is allowed under rate limit.
+        """Check if request is allowed under rate limit.
 
         Returns:
             Tuple of (is_allowed, retry_after_seconds)
@@ -53,8 +52,7 @@ class RateLimiter:
                 return False, max(retry_after, 1)
 
     def get_usage(self) -> tuple[int, int]:
-        """
-        Get current rate limit usage.
+        """Get current rate limit usage.
 
         Returns:
             Tuple of (current_requests, max_requests)

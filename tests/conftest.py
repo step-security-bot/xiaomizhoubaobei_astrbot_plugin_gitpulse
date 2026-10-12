@@ -85,10 +85,12 @@ def _install_astrbot_stubs() -> None:
 
     astrbot = ModuleType("astrbot")
     api = ModuleType("astrbot.api")
-    api.logger = _StubLogger()
-    api.AstrBotConfig = _StubAstrBotConfig
-    api.all = ModuleType("astrbot.api.all")
-    api.message_components = ModuleType("astrbot.api.message_components")
+    # 动态装配桩属性：ModuleType 上直接用属性赋值，mypy 无法静态识别，
+    # 故统一走 setattr（等价语义，类型检查可通过）。
+    setattr(api, "logger", _StubLogger())
+    setattr(api, "AstrBotConfig", _StubAstrBotConfig)
+    setattr(api, "all", ModuleType("astrbot.api.all"))
+    setattr(api, "message_components", ModuleType("astrbot.api.message_components"))
 
     star = ModuleType("astrbot.api.star")
 
@@ -105,23 +107,24 @@ def _install_astrbot_stubs() -> None:
 
         return _decorator
 
-    star.Star = _Star
-    star.Context = _Context
-    star.register = _register
-    api.star = star
+    setattr(star, "Star", _Star)
+    setattr(star, "Context", _Context)
+    setattr(star, "register", _register)
+    setattr(api, "star", star)
 
     class _Plain:
         def __init__(self, *args, **kwargs):
             pass
 
-    api.message_components.Plain = _Plain
+    message_components = getattr(api, "message_components")
+    setattr(message_components, "Plain", _Plain)
 
-    astrbot.api = api
+    setattr(astrbot, "api", api)
     sys.modules["astrbot"] = astrbot
     sys.modules["astrbot.api"] = api
-    sys.modules["astrbot.api.all"] = api.all
+    sys.modules["astrbot.api.all"] = getattr(api, "all")
     sys.modules["astrbot.api.star"] = star
-    sys.modules["astrbot.api.message_components"] = api.message_components
+    sys.modules["astrbot.api.message_components"] = message_components
 
 
 _install_astrbot_stubs()

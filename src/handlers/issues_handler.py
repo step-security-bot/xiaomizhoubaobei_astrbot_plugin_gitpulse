@@ -14,7 +14,6 @@ async def handle_issues_event(data: dict, context):
 
         issue_number = issue.get("number", 0)
         title = issue.get("title", "No title")
-        body = issue.get("body", "")
         issue_url = issue.get("html_url", "")
 
         sender = data.get("sender", {})
