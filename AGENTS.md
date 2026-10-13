@@ -1081,7 +1081,7 @@ pre-commit run --all-files
 | `inclusiveness-analyzer.yml` | 包容性分析 |
 | `stale.yml` | 陈旧 Issue / PR 自动化 |
 | `release.yml` | 发布流程 |
-| `coverage.yml` | 单元测试覆盖率统计并上报 Codecov（`main` push / PR） |
+| `ai-audit-scheduled.yml` | CodeQL 完成后自动做 AI 告警分流（见下方 §11.8.1） |
 
 `.cnb.yml`：CNB 流水线在 `main` 分支 push 时同步代码到 GitHub 上游仓库。
 
@@ -1092,29 +1092,39 @@ pre-commit run --all-files
 > `DevSkim.yml`（多版本源码模式扫描）与 `security-scan.yml`（Bandit）完整覆盖，
 > 故直接移除该工作流以根治告警，避免为消警而长期背负一个无人维护的 Action。
 
-#### 11.8.1 覆盖率链路（Codecov 单一来源）
+> ⚠️ **本仓库没有 `coverage.yml` / `codecov.yml`（重要事实，勿被下文误导）**：本仓库是
+> GitPulse webhook 插件，覆盖率上报链路**从未在此仓库落地**；`AGENTS.md` 中若出现
+> `.github/workflows/coverage.yml` 的字样，均属**早期从生图插件模板复制残留**，
+> 不代表本仓库存在该文件。请勿据此类描述去「修复」一个不存在的文件。
+> 若未来确要引入覆盖率上报，须按 §11.8.2 的安全模型新建工作流，**不要**照抄外部模板。
 
-覆盖率上报**只有一条链路**：GitHub 侧的 `.github/workflows/coverage.yml` + `codecov.yml`，在 GitHub `push`(main) / `pull_request` 时产出 `coverage.xml` 并上报 Codecov，徽章展示在 README 顶部。
+#### 11.8.1 AI 审计工作流（`ai-audit-scheduled.yml`）
 
-> **CNB 侧（`.cnb.yml`）原有的「覆盖率测试 + `testing:coverage`」作业已移除**，CNB 平台不再产出覆盖率徽章，`.cnb.yml` 仅保留「同步到 GitHub」作业。新增/修改覆盖率链路时**不要**再往 CNB 侧加回上报，统一走 Codecov。
+本仓库真正的安全自动化核心是 `ai-audit-scheduled.yml`：在 `CodeQL.yml`（name: 「代码质量分析」）
+完成后，用 `workflow_run` 触发，消费本次 CodeQL 扫描产生的最新告警做 AI 自动分流。
 
-**GitHub 侧关键约定（改动前务必先读这条，否则徽章会显示 unknown）：**
+该工作流采用**令牌与不可信源码物理隔离**的两段式设计（详细安全模型见工作流头部注释，勿削弱）：
 
-- 覆盖率必须用**包名**计数：`python -m coverage run --source=astrbot_plugin_models_ai -m pytest tests -q`。
-  - 仓库目录名不等于包名，靠 `ln -sfn "$GITHUB_WORKSPACE" "$RUNNER_TEMP/astrbot_plugin_models_ai"` 铺出可导入的包视图（与 `tests/_coverage_support.py` 的垫片同源）。
-  - **不要**改用「绝对路径 `--source=/workspace`」的写法：Codecov 侧用绝对路径会写出 `/home/runner/work/...`，固定路径映射后匹配不到文件，覆盖率恒为 0。
-- 报告格式固定为 `coverage.xml`（`coverage xml`），`codecov.yml` 中的 `flags.unittests.paths` 与之一致。
-- **`CODECOV_TOKEN` 只能来自密钥注入**：读取仓库 Secret `secrets.CODECOV_TOKEN`。**严禁**写进代码、`.cnb.yml`、文档或评论。
-- 未配置 token 时上报步骤 `continue-on-error` 跳过，CI **不失败**（仅留存 `coverage-xml` 工件），属预期行为。
-- **令牌口径以 Codecov 官方规则为准，本仓库固定「显式携带 `secrets.CODECOV_TOKEN`」**（依据 Codecov 官方 *When do I need a token?* 一节）：
-  - **私有仓库**：**所有**上传都必须携带令牌。
-  - **公开仓库**：仅当「上传针对**受保护分支**（如 `main`）的提交」且「仓库所有者**未**关闭公开仓库的令牌校验」时才要求令牌；未被保护的提交（如 `pr300:main` 这类带前缀的分支）可免令牌。
-  - **本仓库的 GitHub 目标是公开仓库**（实测 `xiaomizhoubaobei/astrbot_plugin_models_ai` 的 API 返回 `private: false` / `visibility: public`；「私有」指的只是 CNB → GitHub 的**同步链路**，不是目标仓库属性，二者不要混为一谈）；而路线上的 `coverage.yml` 恰好在 `push: main` 这一**受保护分支**上上传，且我们**不打算**去 Codecov 后台关闭公开仓库令牌校验 → 走到「公开 + 受保护分支 + 未关闭校验」这一格，**依然必须带令牌**。
-  - 结论：无论仓库公开还是私有，本仓库都固定走「显式带 `secrets.CODECOV_TOKEN`」这条路径，**不要**改用免令牌上传，也不要因为目标是公开仓库就以为可以省掉 Secret。
-- Codecov 后台提示所提及的「无令牌上传」开关需 `codecov-action` **> v5.0** / `codecov-cli` **> v0.9** 才生效，且官方声明该路径共享全局限流、超限即上传失败且不贴状态，**不建议依赖**。本仓库固定走「显式带令牌」路径（`codecov-action@v5` + `env: CODECOV_TOKEN`）。
-- `codecov.yml` 的 `project` / `patch` 门禁目前均为 `informational: true`（只提示不卡 PR）；要收紧时改这两处，而不是在 CI 里加 `--fail-under`。
+- `triage` job：**无任何 Secret、无写权限**。仅在**可信 ref**（默认分支 / 手动触发的本次 ref）上检出源码，
+  产出结构化审计结论 artifact；`if` 门禁要求上游运行的 `head_repository` 属于本仓库，从源头掐断 fork 源码流入。
+- `publish` job：**唯一持 `GH_PAT` 的 job**，不检出 / 不执行任何不可信源码，只消费 artifact 里的结构化结论；
+  漏洞细节走私密 security advisory，公开 Issue 只留脱敏占位指纹。
 
-**完成 Codecov 接线后仍需人工做一步**：打开 <https://codecov.io> 用 GitHub 账号授权本仓库，先让 CI 成功上报一次，徽章才会从 unknown 变为真实百分比。
+所需 Secrets（仓库 Settings → Secrets and variables → Actions）：`AI_API_ENDPOINT` / `AI_API_TOKEN` /
+`AI_MODEL_NAME`（AI 分流）与 `GH_PAT`（读 security_events + 写 issues/repo，**仅注入 publish job**）；
+`MCP_CONFIG` 可选。**所有令牌严禁写进代码、`.cnb.yml`、文档或评论。**
+
+#### 11.8.2 令牌安全通行原则（PR 受控代码不得接触 Secret）
+
+任何**会执行 PR（含 fork）受控代码**的工作流，都**严禁**在同一 runner / 同一 job 内暴露任何长期令牌
+（Codecov token、PAT、云凭证等）：
+
+- 上游 PR 可在测试中留下后台进程，等后续步骤注入 Secret 后读取其环境变量并外泄。
+- 由此可导致：伪造覆盖率上报、伪造审计结论、越权写仓库等。
+- 正解：① 对 PR **免令牌**上传（如公开仓库的非受保护分支上传）；② 或把**持令牌的上传限制在可信 push 事件**（如 `push: main`）；
+  ③ 或沿用 §11.8.1 的两段式隔离（令牌 job 与不可信源码物理分离）。
+
+本仓库 `ai-audit-scheduled.yml` 已按第 ③ 条落实；新增任何涉及令牌的工作流都必须先过这条原则。
 
 ---
 
@@ -1127,8 +1137,8 @@ pre-commit run --all-files
 5. **新增风格**：只改 `commands/style_prompts.json`，不写死代码。
 6. **提交前**：运行 `pre-commit run --all-files`，确认 black/flake8/mypy 通过。
 7. **提交信息**：使用 Conventional Commits 中文描述。
-8. **不要把密钥写进代码或文档**；API Key 与 `CODECOV_TOKEN` 一律通过配置 / 密钥注入。
-9. **改覆盖率链路**：覆盖率统一由 `.github/workflows/coverage.yml` 上报 Codecov，CNB 侧上报已移除；改动前先读 10.8.1，确认 `--source` 写法与报告格式未被破坏。
+8. **不要把密钥写进代码或文档**；Tokens（`GH_PAT` / `CODECOV_TOKEN` 等）一律通过 GitHub Secrets / 密钥仓库注入。
+9. **令牌与 PR 受控代码隔离**：任何会执行 PR 代码的工作流，严禁在同一 runner/job 暴露长期令牌；新建工作流前必读 §11.8.2，涉及 AI 审计改 §11.8.1。
 
 ---
 
