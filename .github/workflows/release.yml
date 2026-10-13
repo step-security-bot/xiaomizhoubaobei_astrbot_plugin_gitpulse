@@ -42,19 +42,39 @@ jobs:
         with:
           python-version: '3.12'
 
-      # 3. 获取版本号和插件名称
+      # 3. 获取版本号和插件名称（严格白名单校验，杜绝命令注入）
       - name: 获取版本号和插件名称
         id: get_info
+        env:
+          # metadata.yaml 随 PR 提交，属不可信输入；此处只做提取，随后立即用白名单校验。
+          META_FILE: metadata.yaml
         run: |
-          # 从 metadata.yaml 文件中读取版本号
-          VERSION=$(grep "^version:" metadata.yaml | awk '{print $2}')
+          set -euo pipefail
+
+          # 从 metadata.yaml 读取版本号（仅取 key 后的第一个字段，剥离行尾注释/空白）
+          VERSION=$(grep -E "^version:[[:space:]]*" "$META_FILE" | head -n 1 | sed -E 's/^version:[[:space:]]*//; s/[[:space:]]+.*$//')
           # 移除可能存在的 'v' 前缀以避免重复
           VERSION=${VERSION#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
-          # 从 metadata.yaml 文件中读取插件名称
-          PLUGIN_NAME=$(grep "^name:" metadata.yaml | awk '{print $2}')
-          echo "plugin_name=$PLUGIN_NAME" >> $GITHUB_OUTPUT
+
+          # 从 metadata.yaml 读取插件名称（同上处理）
+          PLUGIN_NAME=$(grep -E "^name:[[:space:]]*" "$META_FILE" | head -n 1 | sed -E 's/^name:[[:space:]]*//; s/[[:space:]]+.*$//')
+
+          # ── 白名单严格校验 ──────────────────────────────────────────────
+          # 这两个值后续会用于 mkdir / zip / Release 资源名等位置；metadata.yaml
+          # 属于不可信输入，任何 shell 元字符（$ ` ; | & ( ) 空格 换行等）都
+          # 必须在源头拒绝，否则会在 contents: write 的发布作业中造成命令注入。
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::metadata.yaml 中的 version 非法（仅允许 SemVer，例如 1.2.3）：'${VERSION}'"
+            exit 1
+          fi
+          if ! printf '%s' "$PLUGIN_NAME" | grep -Eq '^[A-Za-z0-9._-]{1,64}$'; then
+            echo "::error::metadata.yaml 中的 name 非法（仅允许字母/数字/._-，且不超过 64 字符）：'${PLUGIN_NAME}'"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "plugin_name=$PLUGIN_NAME" >> "$GITHUB_OUTPUT"
 
       # 4. 安装依赖
       - name: 安装依赖
@@ -66,16 +86,18 @@ jobs:
             echo "src/requirements.txt 不存在或为空，跳过依赖安装"
           fi
 
-      # 5. 创建插件目录
+      # 5. 创建插件目录（plugin_name 经 env 传入，禁止直接内插进 run）
       - name: 创建插件目录
+        env:
+          PLUGIN_NAME: ${{ steps.get_info.outputs.plugin_name }}
         run: |
-          mkdir -p "${{ steps.get_info.outputs.plugin_name }}"
+          mkdir -p "$PLUGIN_NAME"
 
-      # 6. 复制插件文件到构建目录
+      # 6. 复制插件文件到构建目录（plugin_name 经 env 传入，禁止直接内插进 run）
       - name: 复制插件文件
+        env:
+          PLUGIN_NAME: ${{ steps.get_info.outputs.plugin_name }}
         run: |
-          PLUGIN_NAME="${{ steps.get_info.outputs.plugin_name }}"
-
           # 复制主程序文件
           cp main.py "$PLUGIN_NAME/" || true
           # 复制配置文件和元数据
@@ -86,19 +108,22 @@ jobs:
           cp -r src "$PLUGIN_NAME/" || true
           cp -r templates "$PLUGIN_NAME/" || true
 
-      # 7. 打包为 zip 文件
+      # 7. 打包为 zip 文件（plugin_name 经 env 传入，禁止直接内插进 run）
       - name: 创建 zip 包
+        env:
+          PLUGIN_NAME: ${{ steps.get_info.outputs.plugin_name }}
         run: |
-          PLUGIN_NAME="${{ steps.get_info.outputs.plugin_name }}"
           zip -r "${PLUGIN_NAME}.zip" "$PLUGIN_NAME/"
 
       # 8. 生成 Release Notes
       - name: 生成 Release Notes
         id: release_notes
+        env:
+          # version 经 env 传入，禁止直接内插进 run 脚本
+          VERSION: ${{ steps.get_info.outputs.version }}
         run: |
           # 从上一个标签生成发布说明
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          VERSION=${{ steps.get_info.outputs.version }}
 
           # 定义生成更新日志的函数
           generate_changelog_from_git() {
