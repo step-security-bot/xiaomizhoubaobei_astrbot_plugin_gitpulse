@@ -1,6 +1,6 @@
 # Codecov 配置：覆盖率报告口径与门禁策略
 # 说明：本项目覆盖率由 .github/workflows/coverage.yml 产出 coverage.xml 后上报，
-#       Codecov 为唯一覆盖率来源（CNB 侧不做覆盖率上报）。
+#       CNB 侧的测试与覆盖率上报（testing:coverage）已移除，Codecov 为唯一覆盖率来源。
 
 coverage:
   precision: 2
@@ -22,11 +22,14 @@ coverage:
         informational: true
 
 # 覆盖率构成（供 Codecov 页面展开查看）
+# 注意：paths 必须与 coverage.yml 的 `--source` 口径一致，本仓库业务逻辑
+# 全部位于 src/（main.py 仅做注册转发，已被 --source=src 排除在统计之外），
+# 故此处只列 src/。若照搬上游把 main.py 写进来，会匹配不到任何上报文件，
+# 在 Codecov 页面上呈现为一个恒为未知/0% 的死条目。
 flags:
   unittests:
     paths:
       - src/
-      - main.py
     carryforward: true
 
 # 忽略非业务代码，避免拉低口径
