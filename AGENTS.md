@@ -1075,14 +1075,19 @@ pre-commit run --all-files
 | --- | --- |
 | `CodeQL.yml` | 代码安全分析 |
 | `ai-audit-scheduled.yml` | CodeQL 完成后自动做 AI 告警分流（见下方 §11.8.1） |
+| `security-scan.yml` / `DevSkim.yml` / `secret-scanning.yml` | 安全与密钥扫描 |
+| `PythonDependencyAudit.yml` / `dependency-review.yml` | 依赖审计与依赖变更审查 |
+| `tfsec.yml` | IaC 安全扫描 |
+| `Scorecard.yml` | 供应链安全评分 |
+| `inclusiveness-analyzer.yml` | 包容性分析 |
+| `stale.yml` | 陈旧 Issue / PR 自动化 |
+| `release.yml` | 发布流程 |
+| `coverage.yml` | 单元测试覆盖率统计并上报 Codecov（`main` push / PR，见下方 §11.8.3） |
 
-> ⚠️ **本表只列 `.github/workflows/` 下真实存在的工作流**：截至本次修订，该目录**仅有**
-> `CodeQL.yml` 与 `ai-audit-scheduled.yml` 两个文件。表中若出现 `security-scan.yml` /
-> `DevSkim.yml` / `secret-scanning.yml` / `PythonDependencyAudit.yml` / `dependency-review.yml` /
-> `tfsec.yml` / `Scorecard.yml` / `inclusiveness-analyzer.yml` / `stale.yml` / `release.yml` 等字样，
-> 均属**早期从生图插件模板复制残留**，本仓库**并不存在**这些文件（已随 §11.8 描述一并清理）。
-> 判断「当前启用了哪些自动化任务」，请以 `ls .github/workflows/` 的实际结果为准，
-> **不要**据本表旧版本或外部模板去「修复」一个不存在的文件。
+> ⚠️ **本表须与 `ls .github/workflows/` 的实际结果保持一致**：上述工作流均已随
+> 「迁移 `.github` 目录并适配本仓库」落地（自生图插件模板同步而来，并按本仓库的
+> `src/` 源码布局与安全基线逐项适配）。新增 / 删除工作流时，请同步更新本表，
+> 避免文档与目录再次漂移。
 
 `.cnb.yml`：CNB 流水线在 `main` 分支 push 时同步代码到 GitHub 上游仓库。
 
@@ -1092,12 +1097,6 @@ pre-commit run --all-files
 > 其能力（静态安全分析）现由 `CodeQL.yml`（Python 语义级分析，主运行器矩阵覆盖三平台三版本）
 > 与 `ai-audit-scheduled.yml`（消费 CodeQL 告警做 AI 自动分流）承接，
 > 故直接移除该工作流以根治告警，避免为消警而长期背负一个无人维护的 Action。
-
-> ⚠️ **本仓库没有 `coverage.yml` / `codecov.yml`（重要事实，勿被下文误导）**：本仓库是
-> GitPulse webhook 插件，覆盖率上报链路**从未在此仓库落地**；`AGENTS.md` 中若出现
-> `.github/workflows/coverage.yml` 的字样，均属**早期从生图插件模板复制残留**，
-> 不代表本仓库存在该文件。请勿据此类描述去「修复」一个不存在的文件。
-> 若未来确要引入覆盖率上报，须按 §11.8.2 的安全模型新建工作流，**不要**照抄外部模板。
 
 #### 11.8.1 AI 审计工作流（`ai-audit-scheduled.yml`）
 
@@ -1139,6 +1138,30 @@ pre-commit run --all-files
   ③ 或沿用 §11.8.1 的两段式隔离（令牌 job 与不可信源码物理分离）。
 
 本仓库 `ai-audit-scheduled.yml` 已按第 ③ 条落实；新增任何涉及令牌的工作流都必须先过这条原则。
+
+#### 11.8.3 覆盖率链路（Codecov 单一来源）
+
+覆盖率上报**只有一条链路**：GitHub 侧的 `.github/workflows/coverage.yml` + 仓库根 `codecov.yml`，
+在 GitHub `push`(main) / `pull_request` 时产出 `coverage.xml` 并上报 Codecov。
+
+> **CNB 侧（`.cnb.yml`）不做覆盖率上报**：CNB 只负责把代码同步到 GitHub 镜像仓库，
+> 覆盖率统一由 GitHub Actions 侧上报。改动覆盖率链路时**不要**往 CNB 侧加回上报。
+
+**本仓库关键约定（与生图插件模板不同，改动前务必先读）：**
+
+- 覆盖率用 `src` 作为计数源：`python -m coverage run --source=src -m pytest tests -q`。
+  - 本仓库是「插件根 `main.py` + `src/` 源码包」布局，业务逻辑全在 `src/`，故以 `src` 计数；
+    `main.py` 仅做注册转发，不纳入统计（否则会产生 `module-not-imported` 噪声）。
+  - `--source` 必须用**包/模块名**（此处为 `src`），coverage 才会写出相对的 `SF` 路径（如 `src/core/config.py`）；
+    若误用绝对路径，`SF` 会退化成 `/home/runner/work/...`，Codecov 路径映射后匹配不到文件，覆盖率恒为 0。
+- 报告格式固定为 `coverage.xml`（`coverage xml -o coverage.xml`），`codecov.yml` 的 `flags.unittests.paths`
+  必须与之对应的源码口径一致（本仓库为 `src/` 与 `main.py`）。
+- **`CODECOV_TOKEN` 只能来自 GitHub Secrets 注入**（`secrets.CODECOV_TOKEN`），**严禁**写进代码、
+  `.cnb.yml`、文档或评论；未配置 token 时上报步骤 `continue-on-error` 跳过，CI 不失败（仅留存 `coverage-xml` 工件），属预期行为。
+- `codecov.yml` 的 `project` / `patch` 门禁目前均为 `informational: true`（只提示不卡 PR）；
+  要收紧时改这两处，而不是在 CI 里加 `--fail-under`。
+- **完成 Codecov 接线后仍需人工做一步**：用 GitHub 账号在 Codecov 授权本仓库并让 CI 成功上报一次，
+  徽章才会从 unknown 变为真实百分比。
 
 ---
 
