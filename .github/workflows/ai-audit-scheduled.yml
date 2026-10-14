@@ -39,7 +39,13 @@
 #                     工作流运行时将本 Secret 透传过去，从而免改代码即可切换模型。
 #   - GH_PAT          必填，GitHub PAT，需同时含以下权限：
 #                     · security_events 读权限 —— 读取本仓库 CodeQL 告警
-#                     · repo / issues 写权限   —— 创建公开跟踪 Issue 与私密安全公告
+#                     · repo / issues 写权限   —— 创建公开跟踪 Issue
+#                     · Repository security advisories 写权限 —— 创建**私密安全公告**
+#                       （细粒度 PAT 里名为 "Repository security advisories"，权限项
+#                        标记为 write；对应 `POST /repos/{owner}/{repo}/security-advisories`。
+#                        ⚠️ 该权限与 `issues` 写**不通用**：仅给 `issues` 写会导致创建公告
+#                        返回 403/404，publish job 会跳过该条告警——既不建公开 Issue，也不建
+#                        公告。故必须单独授予，勿漏配。）
 #                     ⚠️ 仅注入 publish job（见下），triage job 绝不接触该 Secret。
 #   - MCP_CONFIG      可选，MCP Server（GitHub API）配置
 #

@@ -107,7 +107,7 @@ ai-audit/
 | `seclab-taskflow-agent` 框架 | 需部署框架本体 | ❌ 需部署 |
 | LLM 模型（支持函数调用） | 任意 OpenAI 兼容上游：DeepSeek / 通义千问 / Moonshot / 本地 vLLM 等 | ❌ 需配置（`AI_API_ENDPOINT` + `AI_API_TOKEN`） |
 | GitHub PAT（读告警） | 审计侧只读拉取 CodeQL 告警用（`security_events` 读权限即可） | ❌ 需你提供 |
-| GitHub PAT（写 Issue） | 仅 `publish` job 创建真实 Issue 用（`repo/issues` 写权限） | ❌ 需你提供 |
+| GitHub PAT（写 Issue + 私密公告） | 仅 `publish` job 创建真实 Issue 与私密安全公告用（`issues` 写 + `Repository security advisories` 写，二者**不通用**） | ❌ 需你提供 |
 | MCP Server（GitHub API） | 框架可选的信息收集能力（只读） | ⭕ 可选 |
 
 ---
@@ -242,7 +242,7 @@ hatch run main -t ai_audit.alert_triage_example \
 | `AI_API_ENDPOINT` | ✅ | 上游 base_url（OpenAI 兼容口，如 `https://api.deepseek.com/v1`，或本地 vLLM / Ollama 的 OpenAI 兼容地址） |
 | `AI_API_TOKEN` | ✅ | 对应厂商的 API Key（需支持函数调用） |
 | `AI_MODEL_NAME` | ✅ | 实际调用的模型名（如 `deepseek-v4-flash` / `qwen-max` / `kimi-k2` 等）。工作流运行时将其透传给框架的 `COPILOT_DEFAULT_MODEL` 环境变量 |
-| `GH_PAT` | ✅ | GitHub PAT，需 `repo/issues` 写权限（创建真实 Issue）。**仅注入 `publish` job**，`triage` job 绝不接触该 Secret |
+| `GH_PAT` | ✅ | GitHub PAT，需 `issues` 写权限（创建公开跟踪 Issue）**以及** `Repository security advisories` 写权限（创建私密安全公告，`POST /repos/{owner}/{repo}/security-advisories`）。两者**不通用**，缺后者会导致公告创建被拒、该告警被整体跳过。**仅注入 `publish` job**，`triage` job 绝不接触该 Secret |
 | `MCP_CONFIG` | 可选 | MCP Server（GitHub API）配置 |
 
 > 📌 框架只识别 `AI_API_ENDPOINT` / `AI_API_TOKEN`（即 `AsyncOpenAI(base_url=..., api_key=...)`），
@@ -250,8 +250,12 @@ hatch run main -t ai_audit.alert_triage_example \
 > （由仓库 Secret `AI_MODEL_NAME` 透传），`model_config.yaml`（`-m ai_audit.model_config`）仅声明
 > `api_type: chat_completions`（OpenAI 兼容标准协议）。
 
-> ⚠️ 由于示例会为真实漏洞**创建 Issue**，`GH_PAT` 必须具有仓库的 `issues` 写权限，
-> 否则 `publish` job 会失败（可把 `publish` job 整体注释掉，降级为只产出审计结论）。
+> ⚠️ 由于示例会为真实漏洞**创建公开 Issue 与私密安全公告**，`GH_PAT` 必须**同时**具有：
+> ① 仓库的 `issues` 写权限（建公开 Issue）；② 细粒度 PAT 的 **`Repository security advisories` 写权限**
+> （建私密公告，对应 `POST /repos/{owner}/{repo}/security-advisories`）。**这两项权限不通用**：
+> 仅授予 `issues` 写时，公告创建会返回 403/404，`publish` job 会**跳过该条告警**——结果是该告警
+> 既没有私密公告、也没有公开 Issue。缺任一权限时，可把 `publish` job 整体注释掉，
+> 降级为只产出审计结论。
 > 🔒 `GH_PAT` 只在 `publish` job 的建 Issue 步骤注入；`triage` job 全程不接触它，
 > 因此即便审计对象被污染，也无凭据可被滥用。
 
