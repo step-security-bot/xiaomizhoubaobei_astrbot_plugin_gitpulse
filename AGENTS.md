@@ -1105,14 +1105,27 @@ pre-commit run --all-files
 
 该工作流采用**令牌与不可信源码物理隔离**的两段式设计（详细安全模型见工作流头部注释，勿削弱）：
 
-- `triage` job：**无任何 Secret、无写权限**。仅在**可信 ref**（默认分支 / 手动触发的本次 ref）上检出源码，
+- `triage` job：**无仓库写权限**，但**并非不接触任何凭据**。它在**可信 ref**（默认分支 / 手动触发的本次 ref）上检出源码、
   产出结构化审计结论 artifact；`if` 门禁要求上游运行的 `head_repository` 属于本仓库，从源头掐断 fork 源码流入。
+  实际注入的凭据为：`AI_API_ENDPOINT` / `AI_API_TOKEN` / `AI_MODEL_NAME`（调用 LLM 做分流，**不具备任何仓库写能力**）、
+  只读的 `GITHUB_TOKEN`（读 CodeQL 告警）与可选的 `MCP_CONFIG`（MCP Server 配置）。**它绝不接触 `GH_PAT`。**
 - `publish` job：**唯一持 `GH_PAT` 的 job**，不检出 / 不执行任何不可信源码，只消费 artifact 里的结构化结论；
-  漏洞细节走私密 security advisory，公开 Issue 只留脱敏占位指纹。
+  漏洞细节走私密 security advisory，公开 Issue 只留脱敏占位指纹。它**不注入** `AI_*` 凭据，实际只注入 `GH_PAT`。
+
+**每个 job 实际注入的凭据（维护者扩展/评估边界时以此为准，勿再声称 `triage` 不含任何 Secret）：**
+
+| job | 注入的凭据 | 用途 | 仓库写能力 |
+| --- | --- | --- | --- |
+| `triage` | `AI_API_ENDPOINT`、`AI_API_TOKEN`、`AI_MODEL_NAME`、`GITHUB_TOKEN`（只读）、`MCP_CONFIG`（可选） | 调用 LLM 分流 + 读取 CodeQL 告警 | ❌ 无（仅 `security-events: read` / `contents: read`） |
+| `publish` | `GH_PAT` | 读 `security_events` + 写 `issues/repo`，创建 Issue / 私密公告 | ✅ 有 |
+
+> ⚠️ 边界澄清：**「无仓库写权限」≠「无凭据」**。`triage` 会执行 LLM 调用并持有 `AI_API_TOKEN`、只读 `GITHUB_TOKEN`
+> 与可选的 `MCP_CONFIG`，因此任何进入 `triage` 环境的代码**都可能接触这些凭据**；其安全前提是
+> 「这些凭据不具备仓库写能力 + 仅在可信 ref 上检出源码」，而非「没有 Secret」。`GH_PAT` 则仅注入 `publish`。
 
 所需 Secrets（仓库 Settings → Secrets and variables → Actions）：`AI_API_ENDPOINT` / `AI_API_TOKEN` /
-`AI_MODEL_NAME`（AI 分流）与 `GH_PAT`（读 security_events + 写 issues/repo，**仅注入 publish job**）；
-`MCP_CONFIG` 可选。**所有令牌严禁写进代码、`.cnb.yml`、文档或评论。**
+`AI_MODEL_NAME`（AI 分流，**注入 triage**）与 `GH_PAT`（读 security_events + 写 issues/repo，**仅注入 publish**）；
+`MCP_CONFIG` 可选（注入 triage）。**所有令牌严禁写进代码、`.cnb.yml`、文档或评论。**
 
 #### 11.8.2 令牌安全通行原则（PR 受控代码不得接触 Secret）
 

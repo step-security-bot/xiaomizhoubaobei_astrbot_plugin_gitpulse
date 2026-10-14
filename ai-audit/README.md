@@ -46,7 +46,10 @@ LLM + Taskflow Agent 逐个审计
 > 🔒 **安全设计：审计与创建 Issue 分离（pwn-request 防护）**
 > `ai-audit-scheduled.yml` 把流程拆成**两个 job**，中间只以 **artifact（纯数据）** 传信：
 > - `triage` job：**不持有任何仓库写凭据**（无 `GH_PAT`），仅在**可信 ref**（手动触发的本次 ref
->   或默认分支）上检出源码，产出结论文件 `audit-verdicts.json`；
+>   或默认分支）上检出源码，产出结论文件 `audit-verdicts.json`。
+>   ⚠️ 但它**并非「无任何 Secret」**：为调用 LLM 分流与读取 CodeQL 告警，它实际注入
+>   `AI_API_ENDPOINT` / `AI_API_TOKEN` / `AI_MODEL_NAME`、只读 `GITHUB_TOKEN` 与可选的 `MCP_CONFIG`；
+>   这些凭据**不具备仓库写能力**，`GH_PAT` 则被完全排除在本 job 之外。
 > - `publish` job：**唯一持有 `GH_PAT` 的 job**，**不检出/不执行任何源码**，只消费 artifact 里
 >   的结构化结论按白名单字段建 Issue。
 >
@@ -253,7 +256,9 @@ hatch run main -t ai_audit.alert_triage_example \
 > ⚠️ 由于示例会为真实漏洞**创建 Issue**，`GH_PAT` 必须具有仓库的 `issues` 写权限，
 > 否则 `publish` job 会失败（可把 `publish` job 整体注释掉，降级为只产出审计结论）。
 > 🔒 `GH_PAT` 只在 `publish` job 的建 Issue 步骤注入；`triage` job 全程不接触它，
-> 因此即便审计对象被污染，也无凭据可被滥用。
+> 因此即便审计对象被污染，也无可写仓库的凭据可被滥用。
+> ⚠️ 仍需注意：`triage` 会接触 `AI_API_TOKEN` / 只读 `GITHUB_TOKEN` / 可选 `MCP_CONFIG`
+> （详见上方安全设计小节），安全前提是「这些凭据无仓库写能力 + 仅在可信 ref 检出源码」。
 
 > 首次使用建议先 `workflow_dispatch` 手动跑一次，确认链路正常后再依赖自动触发。
 
@@ -336,7 +341,8 @@ hatch run main -t ai_audit.alert_triage_example \
 
 ---
 
-> 🔒 安全模型说明：本工作流已按「不可信输入与高权限动作隔离」原则改造——审计 job 无凭据、
+> 🔒 安全模型说明：本工作流已按「不可信输入与高权限动作隔离」原则改造——审计 job **不持仓库写凭据**
+> （但会注入 `AI_*` / 只读 `GITHUB_TOKEN` / 可选 `MCP_CONFIG`，并非「无任何 Secret」）、
 > 发文 job 不落地源码，两者以 artifact 传信，并在 `workflow_run` 上加了 fork 门禁，
 > 用于消除「fork PR 源码 → 持 GH_PAT 的 AI agent」这一提权路径。
 >
