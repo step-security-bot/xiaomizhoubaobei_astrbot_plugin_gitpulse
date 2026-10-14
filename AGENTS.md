@@ -1074,22 +1074,23 @@ pre-commit run --all-files
 | Workflow | 作用 |
 | --- | --- |
 | `CodeQL.yml` | 代码安全分析 |
-| `security-scan.yml` / `DevSkim.yml` / `secret-scanning.yml` | 安全与密钥扫描 |
-| `PythonDependencyAudit.yml` / `dependency-review.yml` | 依赖审计与依赖变更审查 |
-| `tfsec.yml` | IaC 安全扫描 |
-| `Scorecard.yml` | 供应链安全评分 |
-| `inclusiveness-analyzer.yml` | 包容性分析 |
-| `stale.yml` | 陈旧 Issue / PR 自动化 |
-| `release.yml` | 发布流程 |
 | `ai-audit-scheduled.yml` | CodeQL 完成后自动做 AI 告警分流（见下方 §11.8.1） |
+
+> ⚠️ **本表只列 `.github/workflows/` 下真实存在的工作流**：截至本次修订，该目录**仅有**
+> `CodeQL.yml` 与 `ai-audit-scheduled.yml` 两个文件。表中若出现 `security-scan.yml` /
+> `DevSkim.yml` / `secret-scanning.yml` / `PythonDependencyAudit.yml` / `dependency-review.yml` /
+> `tfsec.yml` / `Scorecard.yml` / `inclusiveness-analyzer.yml` / `stale.yml` / `release.yml` 等字样，
+> 均属**早期从生图插件模板复制残留**，本仓库**并不存在**这些文件（已随 §11.8 描述一并清理）。
+> 判断「当前启用了哪些自动化任务」，请以 `ls .github/workflows/` 的实际结果为准，
+> **不要**据本表旧版本或外部模板去「修复」一个不存在的文件。
 
 `.cnb.yml`：CNB 流水线在 `main` 分支 push 时同步代码到 GitHub 上游仓库。
 
 > **OSSAR 工作流已移除（`ossar.yml`）**：上游 `github/ossar-action` 停更在 v2.0.0（2024-04），
 > 其 `action.yml` 固定为 `node20`、内置 `@actions/core@1.2.6` 仍使用已废弃的 `set-output` 命令，
 > 因此持续产生「Node.js 20 弃用」与「`set-output` 弃用」两条告警，且**上游无 Node 24 版本可升**。
-> 其能力（静态安全分析）已由 `CodeQL.yml`（Python 语义级分析，主运行器矩阵覆盖三平台三版本）、
-> `DevSkim.yml`（多版本源码模式扫描）与 `security-scan.yml`（Bandit）完整覆盖，
+> 其能力（静态安全分析）现由 `CodeQL.yml`（Python 语义级分析，主运行器矩阵覆盖三平台三版本）
+> 与 `ai-audit-scheduled.yml`（消费 CodeQL 告警做 AI 自动分流）承接，
 > 故直接移除该工作流以根治告警，避免为消警而长期背负一个无人维护的 Action。
 
 > ⚠️ **本仓库没有 `coverage.yml` / `codecov.yml`（重要事实，勿被下文误导）**：本仓库是
