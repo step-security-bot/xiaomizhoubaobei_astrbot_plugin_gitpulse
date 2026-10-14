@@ -2,8 +2,11 @@
 # AI 审计（AI 漏洞分流）— CodeQL 完成后自动运行
 # =============================================================================
 # 用途：在 CodeQL 工作流（.github/workflows/CodeQL.yml）完成后自动运行
-#       ai-audit/alert_triage_example.yaml，消费本仓库 CodeQL 扫描产生的最
-#       新安全告警，做 AI 自动分流。
+#       ai-audit/alert_triage_example.yaml，对 CodeQL 安全告警做 AI 自动分流。
+# ⚠️ 审计范围：taskflow 第 0 步以 state=open&tool_name=CodeQL 逐页拉取的是
+#    **仓库中所有仍处于 open 状态的 CodeQL 告警**，而非仅与触发本工作流的那次
+#    CodeQL 运行相关联的告警。CodeQL 的完成事件只决定**何时触发**，不限定
+#    **审哪些**告警；仓库里残留的更早 open 告警同样会被本次审计纳入分流。
 #
 # ── 安全模型（本工作流的核心设计，勿削弱） ──────────────────────────────────
 # 威胁：workflow_run 会为 **PR（含 fork）触发的 CodeQL 运行** 也开火，而 PR 源码
@@ -154,7 +157,8 @@ jobs:
       - name: 安装 hatch（锁定版本）
         run: pip install hatch==1.14.0 "virtualenv<21"
 
-      # 运行 AI 审计 taskflow（消费最新 CodeQL 告警），产出结构化结论 artifact。
+      # 运行 AI 审计 taskflow（消费仓库全部 open 的 CodeQL 告警，非仅本次运行的增量），
+      # 产出结构化结论 artifact。
       # ⚠️ 本 job 不注入 GH_PAT；读取 CodeQL 告警所需的只读令牌用 GITHUB_TOKEN
       #   （其权限已被顶层收紧到 contents: read，且上游 CodeQL 告警读取无需写权限）。
       #   AI_* 凭据仅用于调用 LLM，不具备任何仓库写能力。

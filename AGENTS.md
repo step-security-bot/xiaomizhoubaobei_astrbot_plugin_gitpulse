@@ -1101,7 +1101,12 @@ pre-commit run --all-files
 #### 11.8.1 AI 审计工作流（`ai-audit-scheduled.yml`）
 
 本仓库真正的安全自动化核心是 `ai-audit-scheduled.yml`：在 `CodeQL.yml`（name: 「代码质量分析」）
-完成后，用 `workflow_run` 触发，消费本次 CodeQL 扫描产生的最新告警做 AI 自动分流。
+完成后，用 `workflow_run` 触发，对 CodeQL 告警做 AI 自动分流。
+
+> ⚠️ **审计范围（勿误读为「仅本次运行」）**：该工作流拉取的是**仓库中所有仍处于 open 状态的
+> CodeQL 告警**（`state=open&tool_name=CodeQL`，逐页取全），**并非**仅与触发它的那次 CodeQL 运行
+> 相关联的告警。因此当仓库里还残留更早扫描产生的 open 告警时，本次审计同样会把它们一并纳入分流。
+> `CodeQL.yml` 的完成事件只决定**何时触发**，不限定**审哪些**告警。
 
 该工作流采用**令牌与不可信源码物理隔离**的两段式设计（详细安全模型见工作流头部注释，勿削弱）：
 
