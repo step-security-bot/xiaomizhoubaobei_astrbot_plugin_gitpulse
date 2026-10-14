@@ -1114,6 +1114,8 @@ pre-commit run --all-files
   产出结构化审计结论 artifact；`if` 门禁要求上游运行的 `head_repository` 属于本仓库，从源头掐断 fork 源码流入。
   实际注入的凭据为：`AI_API_ENDPOINT` / `AI_API_TOKEN` / `AI_MODEL_NAME`（调用 LLM 做分流，**不具备任何仓库写能力**）、
   只读的 `GITHUB_TOKEN`（读 CodeQL 告警）与可选的 `MCP_CONFIG`（MCP Server 配置）。**它绝不接触 `GH_PAT`。**
+  ⚠️ **唯一例外是 `MCP_CONFIG`**：它可能内嵌**由使用者自行提供**的 GitHub 凭据，其权限范围**不受本工作流约束**；
+  故「`triage` 无仓库写能力」**仅在 `MCP_CONFIG` 内嵌凭据被配为只读时成立**（不配则最稳妥）。
 - `publish` job：**唯一持 `GH_PAT` 的 job**，不检出 / 不执行任何不可信源码，只消费 artifact 里的结构化结论；
   漏洞细节走私密 security advisory，公开 Issue 只留脱敏占位指纹。它**不注入** `AI_*` 凭据，实际只注入 `GH_PAT`。
 
@@ -1121,16 +1123,20 @@ pre-commit run --all-files
 
 | job | 注入的凭据 | 用途 | 仓库写能力 |
 | --- | --- | --- | --- |
-| `triage` | `AI_API_ENDPOINT`、`AI_API_TOKEN`、`AI_MODEL_NAME`、`GITHUB_TOKEN`（只读）、`MCP_CONFIG`（可选） | 调用 LLM 分流 + 读取 CodeQL 告警 | ❌ 无（仅 `security-events: read` / `contents: read`） |
+| `triage` | `AI_API_ENDPOINT`、`AI_API_TOKEN`、`AI_MODEL_NAME`、`GITHUB_TOKEN`（只读）、`MCP_CONFIG`（可选） | 调用 LLM 分流 + 读取 CodeQL 告警 | ❌ 无（仅 `security-events: read` / `contents: read`）<br>⚠️ **条件成立**：`MCP_CONFIG` 内嵌凭据须为只读，否则其写能力由使用者自行决定 |
 | `publish` | `GH_PAT` | 读 `security_events` + 写 `issues/repo`，创建 Issue / 私密公告 | ✅ 有 |
 
 > ⚠️ 边界澄清：**「无仓库写权限」≠「无凭据」**。`triage` 会执行 LLM 调用并持有 `AI_API_TOKEN`、只读 `GITHUB_TOKEN`
 > 与可选的 `MCP_CONFIG`，因此任何进入 `triage` 环境的代码**都可能接触这些凭据**；其安全前提是
-> 「这些凭据不具备仓库写能力 + 仅在可信 ref 上检出源码」，而非「没有 Secret」。`GH_PAT` 则仅注入 `publish`。
+> 「**`AI_*` 与只读 `GITHUB_TOKEN` 不具备仓库写能力** + 仅在可信 ref 上检出源码 + **`MCP_CONFIG` 若启用，
+> 其内嵌 GitHub 凭据已自行配为只读**」，而非「没有 Secret」。`GH_PAT` 则仅注入 `publish`。
+> ⚠️ **勿把「无仓库写能力」当作对 `MCP_CONFIG` 的兜底**：`MCP_CONFIG` 内嵌凭据的权限范围**不受本工作流约束**，
+> 它既可能只读、也可能带写权限——本工作流的「无仓库写能力」结论**以「该凭据被配为只读」为附加前提**，
+> 而非无条件成立。维护者在评估暴露面时，必须把它单独计入。
 
 所需 Secrets（仓库 Settings → Secrets and variables → Actions）：`AI_API_ENDPOINT` / `AI_API_TOKEN` /
 `AI_MODEL_NAME`（AI 分流，**注入 triage**）与 `GH_PAT`（读 security_events + 写 issues/repo，**仅注入 publish**）；
-`MCP_CONFIG` 可选（注入 triage）。**所有令牌严禁写进代码、`.cnb.yml`、文档或评论。**
+`MCP_CONFIG` 可选（注入 triage，**其内嵌 GitHub 凭据须自行配为只读**，否则请勿启用）。**所有令牌严禁写进代码、`.cnb.yml`、文档或评论。**
 
 #### 11.8.2 令牌安全通行原则（PR 受控代码不得接触 Secret）
 
